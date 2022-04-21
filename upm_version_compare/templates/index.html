@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<head>
+    <title>UPM-Addon-Compare</title>
+    <style>
+        table, th, td {
+            border: 1px solid;
+        }
+        table {
+            border-collapse: collapse;
+        }
+    </style>
+</head>
+<body>
+<section class="content">
+    <table>
+        <tr>
+            <th colspan="2">Instance A ({{ config['INSTANCES']['instance_a']['base_url'] }})</th>
+            <th colspan="2">Instance B ({{ config['INSTANCES']['instance_b']['base_url'] }})</th>
+        </tr>
+        <tr>
+            <td colspan="2">
+                <a href="{{ url_for('authorize', instance='instance_a') }}">Authorize</a>
+            </td>
+            <td colspan="2">
+                <a href="{{ url_for('authorize', instance='instance_b') }}">Authorize</a>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="2">
+                <p>Token: {{ session.get('oauth', {}).get('instance_a', {}).get('access_token', 'n/a') }}</p>
+                <p>Token Secret: {{ session.get('oauth', {}).get('instance_a', {}).get('access_token_secret', 'n/a') }}</p>
+            </td>
+            <td colspan="2">
+                <p>Token: {{ session.get('oauth', {}).get('instance_b', {}).get('access_token', 'n/a') }}</p>
+                <p>Token Secret: {{ session.get('oauth', {}).get('instance_b', {}).get('access_token_secret', 'n/a') }}</p>
+            </td>
+        </tr>
+        {% for addon_key in addon_keys_common %}
+        {% set version_a = addon_data_a.get(addon_key).get('version') %}
+        {% set version_b = addon_data_b.get(addon_key).get('version') %}
+        {% if version_a != version_b %}
+        <tr style="background:#fdfd96">
+        {% else %}
+        <tr>
+        {% endif%}
+            <td>
+                {{ addon_data_a.get(addon_key).get('name') }}
+            </td>
+            <td>
+                {{ version_a }}
+            </td>
+            <td>
+                {{ addon_data_b.get(addon_key).get('name') }}
+            </td>
+            <td>
+                {{ version_b }}
+            </td>
+        </tr>
+        {% endfor %}
+        {% for addon_key in addon_keys_only_a %}
+        <tr style="background:#fdfd96">
+            <td>
+                {{ addon_data_a.get(addon_key).get('name') }}
+            </td>
+            <td>
+                {{ addon_data_a.get(addon_key).get('version') }}
+            </td>
+            <td colspan="2">
+                n/a
+            </td>
+        </tr>
+        {% endfor %}
+        {% for addon_key in addon_keys_only_b %}
+        <tr style="background:#fdfd96">
+            <td colspan="2">
+                n/a
+            </td>
+            <td>
+                {{ addon_data_b.get(addon_key).get('name') }}
+            </td>
+            <td>
+                {{ addon_data_b.get(addon_key).get('version') }}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</section>
