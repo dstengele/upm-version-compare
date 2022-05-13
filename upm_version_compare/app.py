@@ -1,8 +1,11 @@
+import requests
 from flask import Flask, render_template, session, request, redirect, url_for
 from gevent.pywsgi import WSGIServer
 from oauthlib.oauth1 import SIGNATURE_RSA
+from requests import HTTPError
 from requests_oauthlib import OAuth1Session
 from flask_session import Session
+from packaging import version
 import sys
 import pathlib
 import random
@@ -33,7 +36,7 @@ def get_datadir() -> pathlib.Path:
         return home / "Library/Application Support"
 
 
-def get_addon_data(instance_name):
+def get_oauth_session(instance_name):
     oauth_data = session.get("oauth", {}).get(instance_name, {})
     if (
         "access_token" not in oauth_data.keys()
@@ -42,7 +45,6 @@ def get_addon_data(instance_name):
         return {}
 
     instance = app.config["INSTANCES"][instance_name]
-    base_url = instance["base_url"]
 
     oauth_session = OAuth1Session(
         instance["oauth"]["client_key"],
@@ -52,9 +54,104 @@ def get_addon_data(instance_name):
         signature_method=SIGNATURE_RSA,
     )
 
-    addon_data = oauth_session.get(f"{base_url}/rest/plugins/1.0/").json()
+    if session.get('upm_token', None):
+        oauth_session.params['token'] = session.get('upm_token')
+
+    return oauth_session
+
+
+def get_addon_data(instance_name):
+    instance = app.config["INSTANCES"][instance_name]
+    base_url = instance["base_url"]
+
+    oauth_session = get_oauth_session(instance_name)
+
+    try:
+        addon_response = oauth_session.get(f"{base_url}/rest/plugins/1.0/")
+        session['upm_token'] = addon_response.headers.get('upm-token', None)
+        addon_data = addon_response.json()
+    except Exception:
+        addon_data = {}
+
+    for addon in addon_data.get("plugins", []):
+        addon["version_object"] = version.parse(addon["version"])
 
     return addon_data
+
+
+def get_all_addon_versions(addon_key):
+    versions = []
+    item_index = 0
+    while True:
+        new_versions_reply = requests.get(
+            f"https://marketplace.atlassian.com/rest/2/addons/{addon_key}/versions/",
+            params={'offset': item_index, 'limit': 50}
+        )
+        new_versions_reply.raise_for_status()
+
+        new_versions = new_versions_reply.json().get("_embedded", {}).get("versions", [])
+        if not new_versions:
+            break
+        versions += new_versions
+        item_index += 50
+    return versions
+
+
+def get_download_url(addon_key, addon_version):
+    for mp_version in get_all_addon_versions(addon_key):
+        if mp_version.get("name", None) == addon_version:
+            return (
+                mp_version.get("_embedded", {})
+                .get("artifact", {})
+                .get("_links", {})
+                .get("binary", {})
+                .get("href", None)
+            )
+    else:
+        return None
+
+
+@app.route("/install")
+def install():
+    addon_key = request.args.get("addon_key")
+    addon_version = request.args.get("addon_version")
+
+    install_url = get_download_url(addon_key, addon_version)
+
+    if not install_url:
+        return "Addon version not found", 500
+
+    oauth_session = get_oauth_session("instance_b")
+    base_url = app.config["INSTANCES"]["instance_b"]["base_url"]
+
+    result = oauth_session.post(
+        f"{base_url}/rest/plugins/1.0/",
+        json={"pluginUri": install_url},
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/vnd.atl.plugins.install.uri+json",
+        },
+    )
+
+    return f"""
+    Response Code was: {result.status_code}.<br />
+    <a href="/">Back to Overview</a>
+    """, result.status_code
+
+
+@app.route("/remove")
+def remove():
+    addon_key = request.args.get("addon_key")
+
+    oauth_session = get_oauth_session("instance_b")
+    base_url = app.config["INSTANCES"]["instance_b"]["base_url"]
+
+    result = oauth_session.delete(f"{base_url}/rest/plugins/1.0/{addon_key}-key")
+
+    return f"""
+        Response Code was: {result.status_code}.<br />
+        <a href="/">Back to Overview</a>
+        """, result.status_code
 
 
 @app.route("/")
@@ -144,7 +241,7 @@ def callback():
 
 
 def main():
-    app.config.from_pyfile('../config.py')
+    app.config.from_pyfile("../config.py")
 
     datadir = get_datadir() / "upm_version_compare"
 
