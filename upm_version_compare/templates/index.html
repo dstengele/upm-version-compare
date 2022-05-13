@@ -268,7 +268,7 @@ $('body > section > table > tbody > tr').each(function(i) {
     fetch(`https://marketplace.atlassian.com/rest/2/addons/${addonKey}/versions/`)
         .then(response => {
             if (!response.ok) {
-                return Promise.reject(`No addon with key ${addonKey} found in Marketplace!`)
+                return Promise.reject(`Not found in Marketplace`)
             }
             return response.json()
         })
@@ -281,7 +281,7 @@ $('body > section > table > tbody > tr').each(function(i) {
             $(changelogElement).empty().append(link)
         })
         .catch(error => {
-            $(changelogElement).empty().text('')
+            $(changelogElement).empty().text(error)
         })
 })
 </script>
